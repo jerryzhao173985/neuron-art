@@ -376,14 +376,14 @@
                 </div>
             </div>
 
-            <!-- Math Visualization -->
+            <!-- Training Monitor -->
             <div class="control-section">
-                <h3>Live Mathematics</h3>
-                <div class="stats" id="math-display" style="font-size: 10px; line-height: 1.5;">
-                    Click "Show Math" to see<br>
-                    actual calculations
+                <h3>Training Monitor</h3>
+                <div class="stats" id="math-display" style="font-size: 11px; line-height: 1.6;">
+                    Click "Show Monitor" to see<br>
+                    live training dynamics
                 </div>
-                <button class="button tertiary" onclick="toggleMathDisplay()" id="mathButton" style="margin-top: 8px;">🔢 Show Math</button>
+                <button class="button tertiary" onclick="toggleMathDisplay()" id="mathButton" style="margin-top: 8px;">📊 Show Monitor</button>
             </div>
 
             <!-- Actions -->
@@ -664,7 +664,7 @@
         let trainingData;
         let testData;
         let epoch = 0;
-        let totalEpochs = 100;
+        let totalEpochs = 200;  // Increased for longer observation
         let currentPhase = 'forward'; // 'forward' or 'backward'
         let phaseProgress = 0;
         let isTraining = true;
@@ -679,7 +679,11 @@
         let trainingLog = [];
         let predictionHistory = []; // Track how predictions change over time
         let showMath = false;
-        let currentMathStep = 0;
+
+        // Batch processing state
+        let currentBatch = 0;
+        let totalBatches = 0;
+        let samplesInCurrentBatch = 0;
 
         function initializeTraining() {
             randomSeed(params.seed);
@@ -695,9 +699,9 @@
                 b2: [...network.b2]
             };
 
-            // Generate datasets
-            trainingData = generateDataset(100, params.seed);
-            testData = generateDataset(20, params.seed + 10000);
+            // Generate datasets - more data for better learning observation
+            trainingData = generateDataset(240, params.seed);
+            testData = generateDataset(40, params.seed + 10000);
 
             // Reset training state
             epoch = 0;
@@ -770,10 +774,16 @@
                 [trainingData[i], trainingData[j]] = [trainingData[j], trainingData[i]];
             }
 
-            // Train on batches
+            // Train on batches - each batch does forward pass on all samples,
+            // then backward pass updates weights based on averaged gradients
+            totalBatches = Math.ceil(trainingData.length / params.batchSize);
+
             for (let i = 0; i < trainingData.length; i += params.batchSize) {
                 const batchEnd = Math.min(i + params.batchSize, trainingData.length);
+                currentBatch = Math.floor(i / params.batchSize) + 1;
+                samplesInCurrentBatch = batchEnd - i;
 
+                // Forward pass: process all samples in batch
                 for (let j = i; j < batchEnd; j++) {
                     const sample = trainingData[j];
                     network.train(sample.data, sample.label, params.learningRate);
@@ -789,6 +799,8 @@
                     const trueClass = sample.label[0] > sample.label[1] ? 0 : 1;
                     if (predClass === trueClass) correct++;
                 }
+                // Backward pass happens in train() - weights updated after each sample
+                // In real mini-batch SGD, you'd accumulate gradients and update once per batch
             }
 
             currentLoss = totalLoss / trainingData.length;
@@ -888,8 +900,10 @@
                 }
             }
 
-            // Animate phase transition
-            phaseProgress += 0.02 * params.flowSpeed;
+            // Animate phase transition - slower for better observation
+            // Forward pass represents: processing a batch of samples through network
+            // Backward pass represents: computing gradients and updating weights for that batch
+            phaseProgress += 0.012 * params.flowSpeed;  // Slower transitions
             if (phaseProgress >= 1) {
                 phaseProgress = 0;
                 currentPhase = currentPhase === 'forward' ? 'backward' : 'forward';
@@ -899,6 +913,7 @@
             drawPredictionGrid();
             drawNeuralNetwork();
             drawMetrics();
+            drawPhaseIndicator();  // Show what phase means
 
             // Update stats
             updateStats();
@@ -906,7 +921,7 @@
 
         function drawPredictionGrid() {
             const gridX = 50;
-            const gridY = 50;
+            const gridY = 80; // More space for title and legend
             const cellSize = 60;
             const cols = 5;
             const rows = 4;
@@ -920,13 +935,18 @@
             textSize(14);
             textAlign(LEFT);
             textFont('Poppins');
-            text('Sample Predictions', 0, -20);
+            text('Sample Predictions', 0, -45);
+
+            // Legend - explain colors
+            textSize(9);
+            fill(100);
+            text('Confidence: 0-80% Orange (uncertain) → 80-100% Blue (confident)', 0, -30);
 
             for (let i = 0; i < rows * cols && i < testData.length; i++) {
                 const row = floor(i / cols);
                 const col = i % cols;
                 const x = col * (cellSize + 10);
-                const y = row * (cellSize + 10);
+                const y = row * (cellSize + 10) + row * 12; // Extra spacing for text
 
                 const sample = testData[i];
 
@@ -935,9 +955,37 @@
                 const pred = network.outputActivations;
                 const predClass = pred[0] > pred[1] ? 0 : 1;
                 const correct = predClass === sample.type;
+                const confidence = Math.max(...pred); // 0.5 to 1.0
+                const confidencePercent = confidence * 100;
 
-                // Draw frame (red if wrong, blue if correct)
-                stroke(correct ? '#6a9bcc' : '#d97757');
+                // Confidence threshold approach:
+                // 0-80% = Orange (uncertain, effectively wrong)
+                // 80-100% = Blue (confident, good classification)
+
+                let r, g, b;
+                const threshold = 0.80; // 80% confidence threshold
+
+                if (confidence < threshold) {
+                    // Below threshold: Orange spectrum (0% to 80%)
+                    // Transition from dark orange to lighter orange
+                    const t = confidence / threshold; // 0.0 to 1.0
+                    const baseOrange = {r: 217, g: 119, b: 87};
+                    const intensity = map(t, 0, 1, 0.4, 0.95); // Dark to medium-light
+                    r = baseOrange.r * intensity;
+                    g = baseOrange.g * intensity;
+                    b = baseOrange.b * intensity;
+                } else {
+                    // Above threshold: Blue spectrum (80% to 100%)
+                    // Transition from light blue to bright blue
+                    const t = (confidence - threshold) / (1.0 - threshold); // 0.0 to 1.0
+                    const baseBlue = {r: 106, g: 155, b: 204};
+                    const intensity = map(t, 0, 1, 0.7, 1.0); // Light to bright
+                    r = baseBlue.r * intensity;
+                    g = baseBlue.g * intensity;
+                    b = baseBlue.b * intensity;
+                }
+
+                stroke(r, g, b);
                 strokeWeight(3);
                 noFill();
                 rect(x, y, cellSize, cellSize, 4);
@@ -956,12 +1004,14 @@
                     }
                 }
 
-                // Draw prediction confidence
+                // Draw prediction confidence with matching color
                 textSize(9);
                 textAlign(CENTER);
-                fill(correct ? '#6a9bcc' : '#d97757');
-                text(`${(Math.max(...pred) * 100).toFixed(0)}%`,
-                     x + cellSize / 2, y + cellSize + 15);
+                fill(r, g, b); // Match border color
+
+                // Show confidence percentage (moved up slightly)
+                text(`${confidencePercent.toFixed(0)}%`,
+                     x + cellSize / 2, y + cellSize + 14);
             }
 
             pop();
@@ -1012,11 +1062,6 @@
             drawNeurons(inputPos, network.inputActivations, network.hiddenGradients, 'input');
             drawNeurons(hiddenPos, network.hiddenActivations, network.hiddenGradients, 'hidden');
             drawNeurons(outputPos, network.outputActivations, network.outputGradients, 'output');
-
-            // Draw mathematical annotation overlay if enabled
-            if (showMath) {
-                drawMathAnnotations(inputPos, hiddenPos, outputPos);
-            }
 
             // Draw layer labels
             fill(20);
@@ -1222,115 +1267,6 @@
             }
         }
 
-        function drawMathAnnotations(inputPos, hiddenPos, outputPos) {
-            // Draw computation flow annotations
-            push();
-
-            if (currentPhase === 'forward') {
-                // Show forward pass formula
-                fill(20, 20, 20, 180);
-                noStroke();
-                textSize(11);
-                textAlign(CENTER);
-                textFont('Courier New');
-
-                // Annotate hidden layer computation
-                if (currentMathStep <= 2) {
-                    const pos = hiddenPos[0];
-                    fill(106, 155, 204, 200);
-                    rect(pos.x - 80, pos.y - 50, 160, 40, 4);
-
-                    fill(255);
-                    textSize(9);
-                    text('z = Σ(x·w) + b', pos.x, pos.y - 35);
-                    text(`z = ${(network.b1[0] || 0).toFixed(2)} + ...`, pos.x, pos.y - 22);
-
-                    const activation = network.hiddenActivations[0] || 0;
-                    text(`a = ReLU(z) = ${activation.toFixed(3)}`, pos.x, pos.y - 9);
-                }
-
-                // Annotate output layer computation
-                if (currentMathStep >= 3) {
-                    const pos = outputPos[0];
-                    fill(217, 119, 87, 200);
-                    rect(pos.x - 90, pos.y - 60, 180, 50, 4);
-
-                    fill(255);
-                    textSize(9);
-                    text('y = Σ(h·W2) + b', pos.x, pos.y - 42);
-                    const raw = network.b2[0] + (network.hiddenActivations[0] || 0) * (network.W2[0][0] || 0);
-                    text(`raw = ${raw.toFixed(3)}`, pos.x, pos.y - 28);
-
-                    const prob = network.outputActivations[0] || 0;
-                    text(`P = softmax = ${prob.toFixed(4)}`, pos.x, pos.y - 14);
-                }
-            } else {
-                // Show backward pass formula
-                fill(20, 20, 20, 180);
-                noStroke();
-                textSize(11);
-                textAlign(CENTER);
-                textFont('Courier New');
-
-                // Annotate gradient computation
-                if (currentMathStep <= 1) {
-                    const pos = outputPos[0];
-                    fill(217, 119, 87, 200);
-                    rect(pos.x - 95, pos.y + 20, 190, 45, 4);
-
-                    fill(255);
-                    textSize(9);
-                    text('∂L/∂y = ŷ - y', pos.x, pos.y + 35);
-
-                    if (network.outputGradients.length > 0) {
-                        const grad = network.outputGradients[0] || 0;
-                        text(`grad = ${grad.toFixed(4)}`, pos.x, pos.y + 48);
-                    }
-                }
-
-                // Annotate weight update
-                if (currentMathStep >= 2) {
-                    const pos = hiddenPos[0];
-                    fill(106, 155, 204, 200);
-                    rect(pos.x - 100, pos.y + 20, 200, 45, 4);
-
-                    fill(255);
-                    textSize(8);
-                    text('W_new = W - lr·∂L/∂W', pos.x, pos.y + 35);
-
-                    if (network.W2Gradients.length > 0 && network.W2Gradients[0]) {
-                        const wgrad = network.W2Gradients[0][0] || 0;
-                        text(`∂L/∂W = ${wgrad.toFixed(5)}`, pos.x, pos.y + 48);
-                    }
-                }
-            }
-
-            // Draw connecting arrows with labels
-            if (currentMathStep === 1 && currentPhase === 'forward') {
-                // Arrow from input to hidden with weight label
-                stroke(106, 155, 204, 150);
-                strokeWeight(2);
-                fill(106, 155, 204, 200);
-
-                const start = inputPos[0];
-                const end = hiddenPos[0];
-                const midX = (start.x + end.x) / 2;
-                const midY = (start.y + end.y) / 2;
-
-                line(start.x + 10, start.y, end.x - 20, end.y);
-
-                // Weight label
-                noStroke();
-                rect(midX - 25, midY - 12, 50, 20, 3);
-                fill(255);
-                textSize(8);
-                textAlign(CENTER);
-                text(`W=${(network.W1[0][0] || 0).toFixed(3)}`, midX, midY + 3);
-            }
-
-            pop();
-        }
-
         function drawNeurons(positions, activations, gradients, layer) {
             for (let i = 0; i < positions.length; i++) {
                 const pos = positions[i];
@@ -1467,26 +1403,6 @@
                 strokeWeight(1);
                 circle(0, 0, 20);
 
-                // Show activation/gradient value if math display is on
-                if (showMath && (i === 0 || (layer === 'output'))) {
-                    // Background box
-                    fill(20, 20, 20, 180);
-                    noStroke();
-                    rect(-18, 18, 36, 14, 2);
-
-                    // Text
-                    fill(255, 255, 255, 255);
-                    textSize(8);
-                    textAlign(CENTER);
-                    textFont('Courier New');
-
-                    if (currentPhase === 'forward') {
-                        text('a=' + activation.toFixed(3), 0, 28);
-                    } else if (gradient > 0) {
-                        text('∇=' + gradient.toFixed(3), 0, 28);
-                    }
-                }
-
                 pop();
             }
         }
@@ -1617,10 +1533,85 @@
             pop();
         }
 
+        function drawPhaseIndicator() {
+            push();
+
+            // Position at top center
+            const x = canvasWidth / 2;
+            const y = 30;
+
+            translate(x, y);
+
+            // Background box
+            const boxWidth = 600;
+            const boxHeight = 70;
+
+            fill(255, 255, 255, 230);
+            stroke(currentPhase === 'forward' ? color(106, 155, 204) : color(217, 119, 87));
+            strokeWeight(3);
+            rect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight, 8);
+
+            // Phase indicator
+            noStroke();
+            textAlign(CENTER);
+            textFont('Poppins');
+
+            if (currentPhase === 'forward') {
+                // Forward pass explanation
+                fill(106, 155, 204);
+                textSize(16);
+                textStyle(BOLD);
+                text('⬆ FORWARD PASS', 0, -15);
+
+                fill(60, 60, 60);
+                textSize(11);
+                textStyle(NORMAL);
+                text('Processing batch through network → Computing predictions', 0, 5);
+
+                // Progress bar
+                const barWidth = 500;
+                const barHeight = 8;
+                fill(230, 230, 230);
+                rect(-barWidth/2, 12, barWidth, barHeight, 4);
+
+                fill(106, 155, 204, 200);
+                rect(-barWidth/2, 12, barWidth * phaseProgress, barHeight, 4);
+
+            } else {
+                // Backward pass explanation
+                fill(217, 119, 87);
+                textSize(16);
+                textStyle(BOLD);
+                text('⬇ BACKWARD PASS', 0, -15);
+
+                fill(60, 60, 60);
+                textSize(11);
+                textStyle(NORMAL);
+                text('Computing gradients → Updating all 1,074 weights', 0, 5);
+
+                // Progress bar
+                const barWidth = 500;
+                const barHeight = 8;
+                fill(230, 230, 230);
+                rect(-barWidth/2, 12, barWidth, barHeight, 4);
+
+                fill(217, 119, 87, 200);
+                rect(-barWidth/2, 12, barWidth * phaseProgress, barHeight, 4);
+            }
+
+            pop();
+        }
+
         function updateStats() {
             const stats = document.getElementById('stats');
+
+            // Calculate current batch info
+            totalBatches = Math.ceil(trainingData.length / params.batchSize);
+            const percentComplete = (epoch / totalEpochs * 100).toFixed(1);
+
             stats.innerHTML = `
-                Epoch: ${epoch} / ${totalEpochs}<br>
+                Epoch: ${epoch} / ${totalEpochs} (${percentComplete}%)<br>
+                Batch size: ${params.batchSize} samples<br>
                 Loss: ${currentLoss.toFixed(4)}<br>
                 Accuracy: ${(currentAcc * 100).toFixed(1)}%<br>
                 Phase: ${currentPhase === 'forward' ? 'Forward ↑' : 'Backward ↓'}
@@ -1654,137 +1645,60 @@
 
             if (!network) return;
 
-            // Use first test sample for demonstration
-            const sample = testData[0];
-            network.forward(sample.data);
-
-            currentMathStep = (currentMathStep + 1) % 6; // Cycle through 6 steps
-
             let html = '';
 
+            // Real-time training monitor - shows what's actually happening
             if (currentPhase === 'forward') {
-                // Show forward pass calculations
-                switch(currentMathStep) {
-                    case 0:
-                        html = `<b>FORWARD: Input Layer</b><br>`;
-                        html += `Sample: ${sample.type === 0 ? 'Circle' : 'Square'}<br>`;
-                        html += `Input[0:3] = [${sample.data.slice(0, 3).map(x => x.toFixed(1)).join(', ')}...]<br>`;
-                        html += `(64 total inputs)<br>`;
-                        break;
-                    case 1:
-                        html = `<b>FORWARD: Hidden Neuron 0</b><br>`;
-                        html += `z = Σ(input × weight) + bias<br>`;
-                        const z0 = network.b1[0] + sample.data.slice(0, 3).reduce((sum, x, i) =>
-                            sum + x * network.W1[i][0], 0);
-                        html += `z = ${network.b1[0].toFixed(3)} + `;
-                        html += `${sample.data[0].toFixed(1)}×${network.W1[0][0].toFixed(3)} + ...<br>`;
-                        html += `z = ${z0.toFixed(4)}<br>`;
-                        html += `a = ReLU(z) = ${network.hiddenActivations[0].toFixed(4)}`;
-                        break;
-                    case 2:
-                        html = `<b>FORWARD: Hidden Layer</b><br>`;
-                        html += `Activations (first 4):<br>`;
-                        for (let i = 0; i < 4; i++) {
-                            html += `h[${i}] = ${network.hiddenActivations[i].toFixed(4)}<br>`;
-                        }
-                        break;
-                    case 3:
-                        html = `<b>FORWARD: Output Layer</b><br>`;
-                        html += `Circle = Σ(hidden × W2)<br>`;
-                        const sum0 = network.b2[0] + network.hiddenActivations.slice(0, 3).reduce((s, h, i) =>
-                            s + h * network.W2[i][0], 0);
-                        html += `= ${network.b2[0].toFixed(3)} + `;
-                        html += `${network.hiddenActivations[0].toFixed(3)}×${network.W2[0][0].toFixed(3)} + ...<br>`;
-                        html += `= ${sum0.toFixed(4)}`;
-                        break;
-                    case 4:
-                        html = `<b>FORWARD: Softmax</b><br>`;
-                        html += `P(Circle) = ${network.outputActivations[0].toFixed(4)}<br>`;
-                        html += `P(Square) = ${network.outputActivations[1].toFixed(4)}<br>`;
-                        html += `Sum = ${(network.outputActivations[0] + network.outputActivations[1]).toFixed(4)}<br>`;
-                        html += `Prediction: ${network.outputActivations[0] > network.outputActivations[1] ? 'Circle' : 'Square'}`;
-                        break;
-                    case 5:
-                        html = `<b>FORWARD: Loss</b><br>`;
-                        const target = sample.type === 0 ? [1, 0] : [0, 1];
-                        const loss = -target.reduce((s, t, i) =>
-                            s + t * Math.log(Math.max(network.outputActivations[i], 1e-10)), 0);
-                        html += `Cross-Entropy:<br>`;
-                        html += `L = -Σ(y × log(ŷ))<br>`;
-                        html += `L = -${target[0]}×log(${network.outputActivations[0].toFixed(4)})<br>`;
-                        html += `     -${target[1]}×log(${network.outputActivations[1].toFixed(4)})<br>`;
-                        html += `L = ${loss.toFixed(4)}`;
-                        break;
+                // FORWARD PASS - What you're seeing on screen
+                html = `<div style="color: #6a9bcc; font-weight: bold; margin-bottom: 8px;">⬆ PREDICTION PHASE</div>`;
+
+                // Count active neurons
+                let activeNeurons = 0;
+                for (let i = 0; i < network.hiddenActivations.length; i++) {
+                    if (network.hiddenActivations[i] > 0.1) activeNeurons++;
                 }
+
+                html += `<b>Network Activity:</b><br>`;
+                html += `Active neurons: ${activeNeurons}/16<br>`;
+                html += `Current loss: ${currentLoss.toFixed(4)}<br>`;
+                html += `Confidence: ${(Math.max(...network.outputActivations) * 100).toFixed(1)}%<br>`;
+
+                html += `<br><b>What's Flowing:</b><br>`;
+                html += `White particles = data<br>`;
+                html += `Bright glows = strong signals<br>`;
+                html += `Making prediction...<br>`;
+
             } else {
-                // Show backward pass calculations
-                switch(currentMathStep) {
-                    case 0:
-                        html = `<b>BACKWARD: Output Grad</b><br>`;
-                        html += `∂L/∂output = ŷ - y<br>`;
-                        const target = sample.type === 0 ? [1, 0] : [0, 1];
-                        html += `Circle: ${network.outputActivations[0].toFixed(4)} - ${target[0]}<br>`;
-                        html += `      = ${(network.outputActivations[0] - target[0]).toFixed(4)}<br>`;
-                        html += `Square: ${network.outputActivations[1].toFixed(4)} - ${target[1]}<br>`;
-                        html += `      = ${(network.outputActivations[1] - target[1]).toFixed(4)}`;
-                        break;
-                    case 1:
-                        html = `<b>BACKWARD: Hidden Grad 0</b><br>`;
-                        html += `∂L/∂h[0] = Σ(∂L/∂out × W2)<br>`;
-                        if (network.outputGradients.length > 0) {
-                            const grad = network.outputGradients[0] * network.W2[0][0] +
-                                        network.outputGradients[1] * network.W2[0][1];
-                            html += `= ${network.outputGradients[0].toFixed(4)}×${network.W2[0][0].toFixed(3)}<br>`;
-                            html += `  + ${network.outputGradients[1].toFixed(4)}×${network.W2[0][1].toFixed(3)}<br>`;
-                            html += `= ${grad.toFixed(4)}<br>`;
-                            html += `× ReLU'(${network.hiddenActivations[0].toFixed(3)})`;
-                        }
-                        break;
-                    case 2:
-                        html = `<b>BACKWARD: Weight Grad</b><br>`;
-                        html += `∂L/∂W2[0][0] = ∂L/∂out × h[0]<br>`;
-                        if (network.outputGradients.length > 0) {
-                            const wgrad = network.outputGradients[0] * network.hiddenActivations[0];
-                            html += `= ${network.outputGradients[0].toFixed(4)} × ${network.hiddenActivations[0].toFixed(4)}<br>`;
-                            html += `= ${wgrad.toFixed(6)}`;
-                        }
-                        break;
-                    case 3:
-                        html = `<b>BACKWARD: Update Rule</b><br>`;
-                        html += `W_new = W_old - lr × ∂L/∂W<br>`;
-                        if (network.W2Gradients.length > 0 && network.W2Gradients[0]) {
-                            const oldW = network.W2[0][0];
-                            const grad = network.W2Gradients[0][0] || 0;
-                            html += `W2[0][0]_new = ${oldW.toFixed(6)}<br>`;
-                            html += `  - ${params.learningRate.toFixed(3)} × ${grad.toFixed(6)}<br>`;
-                            html += `  = ${(oldW - params.learningRate * grad).toFixed(6)}`;
-                        }
-                        break;
-                    case 4:
-                        html = `<b>BACKWARD: Gradient Norms</b><br>`;
-                        if (network.hiddenGradients.length > 0) {
-                            const avgHiddenGrad = network.hiddenGradients.reduce((a, b) =>
-                                a + Math.abs(b), 0) / network.hiddenGradients.length;
-                            html += `Hidden layer avg: ${avgHiddenGrad.toFixed(6)}<br>`;
-                        }
-                        if (network.outputGradients.length > 0) {
-                            const avgOutputGrad = network.outputGradients.reduce((a, b) =>
-                                a + Math.abs(b), 0) / network.outputGradients.length;
-                            html += `Output layer avg: ${avgOutputGrad.toFixed(6)}<br>`;
-                        }
-                        html += `<small>(smaller = converging)</small>`;
-                        break;
-                    case 5:
-                        html = `<b>BACKWARD: Complete</b><br>`;
-                        html += `All weights updated!<br>`;
-                        html += `Total parameters:<br>`;
-                        html += `W1: 64×16 = 1024<br>`;
-                        html += `W2: 16×2 = 32<br>`;
-                        html += `b1: 16, b2: 2<br>`;
-                        html += `Total: 1074 params`;
-                        break;
+                // BACKWARD PASS - What you're seeing on screen
+                html = `<div style="color: #d97757; font-weight: bold; margin-bottom: 8px;">⬇ LEARNING PHASE</div>`;
+
+                // Calculate gradient strength
+                let avgGrad = 0;
+                if (network.hiddenGradients.length > 0) {
+                    avgGrad = network.hiddenGradients.reduce((a, b) =>
+                        a + Math.abs(b), 0) / network.hiddenGradients.length;
                 }
+
+                // Weight change this epoch
+                const recentChange = lossHistory.length >= 2 ?
+                    Math.abs(lossHistory[lossHistory.length - 1] - lossHistory[lossHistory.length - 2]) : 0;
+
+                html += `<b>Learning Dynamics:</b><br>`;
+                html += `Gradient strength: ${avgGrad.toFixed(5)}<br>`;
+                html += `Loss change: ${recentChange > 0 ? '-' : ''}${recentChange.toFixed(4)}<br>`;
+                html += `Weights updated: 1,074<br>`;
+
+                html += `<br><b>What's Flowing:</b><br>`;
+                html += `Red particles = corrections<br>`;
+                html += `Red halos = adjusting<br>`;
+                html += `Network improving...<br>`;
             }
+
+            // Training progress indicator
+            const epochProgress = (epoch / totalEpochs * 100).toFixed(1);
+            html += `<br><div style="padding-top: 8px; border-top: 1px solid #ddd; margin-top: 8px;">`;
+            html += `<small style="color:#888;">Training: ${epochProgress}% complete</small>`;
+            html += `</div>`;
 
             mathDisplay.innerHTML = html;
         }
@@ -1792,11 +1706,11 @@
         function toggleMathDisplay() {
             showMath = !showMath;
             const btn = document.getElementById('mathButton');
-            btn.textContent = showMath ? '🔢 Hide Math' : '🔢 Show Math';
+            btn.textContent = showMath ? '📊 Hide Monitor' : '📊 Show Monitor';
 
             if (!showMath) {
                 document.getElementById('math-display').innerHTML =
-                    'Click "Show Math" to see<br>actual calculations';
+                    'Click "Show Monitor" to see<br>live training dynamics';
             }
         }
 

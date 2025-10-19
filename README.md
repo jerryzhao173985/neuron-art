@@ -10,6 +10,22 @@ This is **not a mock animation**—it's a genuine neural network training in rea
 - **Task**: Binary classification (circles vs squares)
 - **Architecture**: 64 inputs (8×8 grid) → 16 hidden neurons → 2 outputs
 - **Training**: Real backpropagation with stochastic gradient descent
+- **Dataset**: 240 training samples, 40 test samples (more data = better learning observation)
+- **Training**: 200 epochs (longer observation of convergence)
+
+### What Forward & Backward Mean
+
+**⬆ Forward Pass** (White particles flowing up):
+- Processing a batch of samples through the network
+- Computing predictions based on current weights
+- Represents: "What the network currently thinks"
+
+**⬇ Backward Pass** (Red particles flowing down):
+- Computing gradients via backpropagation
+- Updating all 1,074 weights using gradient descent
+- Represents: "How to improve the weights"
+
+**Read `TRAINING_PROCESS.md`** for detailed explanation of what each phase represents!
 
 ### Visual Elements
 
@@ -212,10 +228,20 @@ The visualization uses **computational aesthetics** to make backpropagation visi
 
 - `neural_illumination.html` - Complete interactive visualization
 - `neural_illumination_philosophy.md` - Algorithmic philosophy document
+- `TRAINING_PROCESS.md` - **NEW!** What forward & backward passes really mean
 - `VISUAL_FLOW_GUIDE.md` - Artistic interpretation of forward/backward flow
 - `MATH_EXPLAINED.md` - Mathematical explanations with examples
 - `PROOF_OF_TRAINING.md` - Evidence this is real training
+- `SUMMARY.md` - Complete overview of the project
 - `README.md` - This file
+
+### Recommended Reading Order
+
+1. **Start here**: `README.md` - Overview and quick start
+2. **Understand the process**: `TRAINING_PROCESS.md` - What's really happening
+3. **Visual understanding**: `VISUAL_FLOW_GUIDE.md` - Artistic interpretation
+4. **Mathematical depth**: `MATH_EXPLAINED.md` - Step-by-step calculations
+5. **Verification**: `PROOF_OF_TRAINING.md` - Evidence it's real
 
 ## Credits
 
