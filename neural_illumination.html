@@ -309,10 +309,10 @@
                 </div>
 
                 <div class="control-group">
-                    <label>Training Speed</label>
+                    <label>Training Speed <small style="color: #888;">(epochs per frame)</small></label>
                     <div class="slider-container">
-                        <input type="range" id="trainingSpeed" min="1" max="10" step="1" value="3" oninput="updateParam('trainingSpeed', this.value)">
-                        <span class="value-display" id="trainingSpeed-value">3</span>
+                        <input type="range" id="trainingSpeed" min="0.1" max="10" step="0.1" value="3" oninput="updateParam('trainingSpeed', this.value)">
+                        <span class="value-display" id="trainingSpeed-value">3.0</span>
                     </div>
                 </div>
 
@@ -323,6 +323,45 @@
                         <span class="value-display" id="batchSize-value">16</span>
                     </div>
                 </div>
+
+                <div class="control-group">
+                    <label>Training Samples</label>
+                    <div class="slider-container">
+                        <input type="range" id="dataSamples" min="50" max="1000" step="10" value="240" oninput="updateParam('dataSamples', this.value, true)">
+                        <span class="value-display" id="dataSamples-value">240</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Max Epochs</label>
+                    <div class="slider-container">
+                        <input type="range" id="maxEpochs" min="50" max="500" step="10" value="200" oninput="updateParam('maxEpochs', this.value)">
+                        <span class="value-display" id="maxEpochs-value">200</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Accuracy Threshold</label>
+                    <div class="slider-container">
+                        <input type="range" id="accuracyThreshold" min="0.5" max="1.0" step="0.05" value="0.80" oninput="updateParam('accuracyThreshold', this.value)">
+                        <span class="value-display" id="accuracyThreshold-value">80%</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Hidden Layer Size</label>
+                    <div class="slider-container">
+                        <input type="range" id="hiddenSize" min="8" max="32" step="4" value="16" oninput="updateParam('hiddenSize', this.value, true)">
+                        <span class="value-display" id="hiddenSize-value">16</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="earlyStop" onchange="updateParam('earlyStop', this.checked)" style="width: auto;">
+                        <span>Early Stop (when accuracy plateaus)</span>
+                    </label>
+                </div>
             </div>
 
             <!-- Visualization Parameters -->
@@ -332,15 +371,15 @@
                 <div class="control-group">
                     <label>Neuron Glow Intensity</label>
                     <div class="slider-container">
-                        <input type="range" id="glowIntensity" min="0.5" max="3" step="0.1" value="1.5" oninput="updateParam('glowIntensity', this.value)">
+                        <input type="range" id="glowIntensity" min="0.1" max="3" step="0.1" value="1.5" oninput="updateParam('glowIntensity', this.value)">
                         <span class="value-display" id="glowIntensity-value">1.5</span>
                     </div>
                 </div>
 
                 <div class="control-group">
-                    <label>Flow Speed</label>
+                    <label>Animation Multiplier <small style="color: #888;">(syncs with Training Speed)</small></label>
                     <div class="slider-container">
-                        <input type="range" id="flowSpeed" min="0.5" max="3" step="0.1" value="1.5" oninput="updateParam('flowSpeed', this.value)">
+                        <input type="range" id="flowSpeed" min="0.1" max="3" step="0.1" value="1.5" oninput="updateParam('flowSpeed', this.value)">
                         <span class="value-display" id="flowSpeed-value">1.5</span>
                     </div>
                 </div>
@@ -351,6 +390,20 @@
                         <input type="range" id="synapseAlpha" min="0.1" max="1" step="0.05" value="0.4" oninput="updateParam('synapseAlpha', this.value)">
                         <span class="value-display" id="synapseAlpha-value">0.4</span>
                     </div>
+                </div>
+
+                <div class="control-group">
+                    <label style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="showSynapses" checked onchange="updateParam('showSynapses', this.checked)" style="width: auto;">
+                        <span>Show Synapses (connection lines)</span>
+                    </label>
+                </div>
+
+                <div class="control-group">
+                    <label style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="showParticles" checked onchange="updateParam('showParticles', this.checked)" style="width: auto;">
+                        <span>Show Particles (flow animations)</span>
+                    </label>
                 </div>
             </div>
 
@@ -415,7 +468,22 @@
             batchSize: 16,
             glowIntensity: 1.5,
             flowSpeed: 1.5,
-            synapseAlpha: 0.4
+            synapseAlpha: 0.4,
+
+            // Visualization toggles
+            showSynapses: true,      // Show/hide connection lines
+            showParticles: true,     // Show/hide flow particles
+
+            // Training control parameters
+            dataSamples: 240,        // Number of training samples (50-1000)
+            maxEpochs: 200,          // Training epochs (50-500)
+            accuracyThreshold: 0.80, // Confidence threshold for correct predictions (0.5-1.0)
+
+            // Network architecture
+            hiddenSize: 16,          // Neurons per hidden layer (8-32)
+
+            // Training behavior
+            earlyStop: false         // Stop when accuracy plateaus
         };
 
         let defaultParams = {...params};
@@ -425,32 +493,40 @@
         // ═══════════════════════════════════════════════════════════════════════
 
         class NeuralNetwork {
-            constructor(inputSize, hiddenSize, outputSize, seed) {
+            constructor(inputSize, hidden1Size, hidden2Size, outputSize, seed) {
                 this.inputSize = inputSize;
-                this.hiddenSize = hiddenSize;
+                this.hidden1Size = hidden1Size;
+                this.hidden2Size = hidden2Size;
                 this.outputSize = outputSize;
 
                 // Initialize weights with Xavier initialization
                 randomSeed(seed);
 
-                // Weights: input -> hidden
-                this.W1 = this.initWeights(inputSize, hiddenSize);
-                this.b1 = Array(hiddenSize).fill(0);
+                // Weights: input -> hidden1
+                this.W1 = this.initWeights(inputSize, hidden1Size);
+                this.b1 = Array(hidden1Size).fill(0);
 
-                // Weights: hidden -> output
-                this.W2 = this.initWeights(hiddenSize, outputSize);
-                this.b2 = Array(outputSize).fill(0);
+                // Weights: hidden1 -> hidden2
+                this.W2 = this.initWeights(hidden1Size, hidden2Size);
+                this.b2 = Array(hidden2Size).fill(0);
+
+                // Weights: hidden2 -> output
+                this.W3 = this.initWeights(hidden2Size, outputSize);
+                this.b3 = Array(outputSize).fill(0);
 
                 // Store activations and gradients for visualization
                 this.inputActivations = [];
-                this.hiddenActivations = [];
+                this.hidden1Activations = [];
+                this.hidden2Activations = [];
                 this.outputActivations = [];
 
-                this.hiddenGradients = [];
+                this.hidden1Gradients = [];
+                this.hidden2Gradients = [];
                 this.outputGradients = [];
 
                 this.W1Gradients = [];
                 this.W2Gradients = [];
+                this.W3Gradients = [];
             }
 
             initWeights(rows, cols) {
@@ -483,22 +559,32 @@
             forward(input) {
                 this.inputActivations = [...input];
 
-                // Hidden layer
-                this.hiddenActivations = [];
-                for (let j = 0; j < this.hiddenSize; j++) {
+                // Hidden layer 1
+                this.hidden1Activations = [];
+                for (let j = 0; j < this.hidden1Size; j++) {
                     let sum = this.b1[j];
                     for (let i = 0; i < this.inputSize; i++) {
                         sum += input[i] * this.W1[i][j];
                     }
-                    this.hiddenActivations[j] = this.relu(sum);
+                    this.hidden1Activations[j] = this.relu(sum);
+                }
+
+                // Hidden layer 2
+                this.hidden2Activations = [];
+                for (let j = 0; j < this.hidden2Size; j++) {
+                    let sum = this.b2[j];
+                    for (let i = 0; i < this.hidden1Size; i++) {
+                        sum += this.hidden1Activations[i] * this.W2[i][j];
+                    }
+                    this.hidden2Activations[j] = this.relu(sum);
                 }
 
                 // Output layer
                 const outputRaw = [];
                 for (let k = 0; k < this.outputSize; k++) {
-                    let sum = this.b2[k];
-                    for (let j = 0; j < this.hiddenSize; j++) {
-                        sum += this.hiddenActivations[j] * this.W2[j][k];
+                    let sum = this.b3[k];
+                    for (let j = 0; j < this.hidden2Size; j++) {
+                        sum += this.hidden2Activations[j] * this.W3[j][k];
                     }
                     outputRaw[k] = sum;
                 }
@@ -514,44 +600,69 @@
                     this.outputGradients[k] = this.outputActivations[k] - target[k];
                 }
 
-                // Hidden layer gradients
-                this.hiddenGradients = [];
-                for (let j = 0; j < this.hiddenSize; j++) {
+                // Hidden layer 2 gradients (backprop from output)
+                this.hidden2Gradients = [];
+                for (let j = 0; j < this.hidden2Size; j++) {
                     let grad = 0;
                     for (let k = 0; k < this.outputSize; k++) {
-                        grad += this.outputGradients[k] * this.W2[j][k];
+                        grad += this.outputGradients[k] * this.W3[j][k];
                     }
-                    this.hiddenGradients[j] = grad * this.reluDerivative(this.hiddenActivations[j]);
+                    this.hidden2Gradients[j] = grad * this.reluDerivative(this.hidden2Activations[j]);
                 }
 
-                // Update W2 and b2
-                this.W2Gradients = [];
-                for (let j = 0; j < this.hiddenSize; j++) {
-                    this.W2Gradients[j] = [];
+                // Hidden layer 1 gradients (backprop from hidden2)
+                this.hidden1Gradients = [];
+                for (let j = 0; j < this.hidden1Size; j++) {
+                    let grad = 0;
+                    for (let k = 0; k < this.hidden2Size; k++) {
+                        grad += this.hidden2Gradients[k] * this.W2[j][k];
+                    }
+                    this.hidden1Gradients[j] = grad * this.reluDerivative(this.hidden1Activations[j]);
+                }
+
+                // Update W3 and b3 (hidden2 -> output)
+                this.W3Gradients = [];
+                for (let j = 0; j < this.hidden2Size; j++) {
+                    this.W3Gradients[j] = [];
                     for (let k = 0; k < this.outputSize; k++) {
-                        const gradient = this.outputGradients[k] * this.hiddenActivations[j];
+                        const gradient = this.outputGradients[k] * this.hidden2Activations[j];
+                        this.W3Gradients[j][k] = gradient;
+                        this.W3[j][k] -= learningRate * gradient;
+                    }
+                }
+
+                for (let k = 0; k < this.outputSize; k++) {
+                    this.b3[k] -= learningRate * this.outputGradients[k];
+                }
+
+                // Update W2 and b2 (hidden1 -> hidden2)
+                this.W2Gradients = [];
+                for (let j = 0; j < this.hidden1Size; j++) {
+                    this.W2Gradients[j] = [];
+                    for (let k = 0; k < this.hidden2Size; k++) {
+                        const gradient = this.hidden2Gradients[k] * this.hidden1Activations[j];
                         this.W2Gradients[j][k] = gradient;
                         this.W2[j][k] -= learningRate * gradient;
                     }
                 }
 
-                for (let k = 0; k < this.outputSize; k++) {
-                    this.b2[k] -= learningRate * this.outputGradients[k];
+                for (let k = 0; k < this.hidden2Size; k++) {
+                    this.b2[k] -= learningRate * this.hidden2Gradients[k];
                 }
 
-                // Update W1 and b1
+                // Update W1 and b1 (input -> hidden1)
                 this.W1Gradients = [];
                 for (let i = 0; i < this.inputSize; i++) {
                     this.W1Gradients[i] = [];
-                    for (let j = 0; j < this.hiddenSize; j++) {
-                        const gradient = this.hiddenGradients[j] * input[i];
+                    for (let j = 0; j < this.hidden1Size; j++) {
+                        const gradient = this.hidden1Gradients[j] * input[i];
                         this.W1Gradients[i][j] = gradient;
                         this.W1[i][j] -= learningRate * gradient;
                     }
                 }
 
-                for (let j = 0; j < this.hiddenSize; j++) {
-                    this.b1[j] -= learningRate * this.hiddenGradients[j];
+                for (let j = 0; j < this.hidden1Size; j++) {
+                    this.b1[j] -= learningRate * this.hidden1Gradients[j];
                 }
             }
 
@@ -664,7 +775,7 @@
         let trainingData;
         let testData;
         let epoch = 0;
-        let totalEpochs = 200;  // Increased for longer observation
+        let totalEpochs = 200;  // Will be set from params.maxEpochs during initialization
         let currentPhase = 'forward'; // 'forward' or 'backward'
         let phaseProgress = 0;
         let isTraining = true;
@@ -672,6 +783,30 @@
         let accHistory = [];
         let currentLoss = 0;
         let currentAcc = 0;
+
+        // Track max gradients for relative bar display
+        let maxHidden1Grad = 0.001;  // Start with small non-zero value
+        let maxHidden2Grad = 0.001;
+        let maxOutputGrad = 0.001;
+
+        // Early stopping tracking
+        let bestAccuracy = 0;
+        let epochsSinceImprovement = 0;
+        let earlyStopPatience = 15;  // Stop if no improvement for 15 epochs
+        const improvementThreshold = 0.001;  // Minimum improvement to count as progress
+
+        // Frozen state for pause functionality
+        let frozenPredictions = null;  // Cache predictions when paused
+        let frozenNetworkState = null;  // Cache network activations when paused
+
+        // Training frame counter (only increments when training, for consistent timing)
+        let trainingFrameCount = 0;
+
+        // Epoch accumulator (for fractional training speeds < 1.0)
+        let epochAccumulator = 0;
+
+        // Effective animation speed (synchronized with training speed)
+        let effectiveAnimationSpeed = 1.5;
 
         // Training diagnostics - proof of learning
         let initialWeights = null;
@@ -688,23 +823,26 @@
         function initializeTraining() {
             randomSeed(params.seed);
 
-            // Create network
-            network = new NeuralNetwork(64, 16, 2, params.seed);
+            // Create network with configurable hidden layer sizes
+            network = new NeuralNetwork(64, params.hiddenSize, params.hiddenSize, 2, params.seed);
 
             // Store initial weights for comparison
             initialWeights = {
                 W1: JSON.parse(JSON.stringify(network.W1)),
                 W2: JSON.parse(JSON.stringify(network.W2)),
+                W3: JSON.parse(JSON.stringify(network.W3)),
                 b1: [...network.b1],
-                b2: [...network.b2]
+                b2: [...network.b2],
+                b3: [...network.b3]
             };
 
-            // Generate datasets - more data for better learning observation
-            trainingData = generateDataset(240, params.seed);
-            testData = generateDataset(40, params.seed + 10000);
+            // Generate datasets with configurable sample count
+            trainingData = generateDataset(params.dataSamples, params.seed);
+            testData = generateDataset(Math.max(40, Math.floor(params.dataSamples / 6)), params.seed + 10000);
 
             // Reset training state
             epoch = 0;
+            totalEpochs = params.maxEpochs;  // Set from parameters
             lossHistory = [];
             accHistory = [];
             currentLoss = 0;
@@ -712,15 +850,33 @@
             phaseProgress = 0;
             currentPhase = 'forward';
             totalWeightChanges = 0;
+            trainingFrameCount = 0;  // Reset training frame counter
+            epochAccumulator = 0;  // Reset epoch accumulator
             trainingLog = [];
             predictionHistory = [];
+
+            // Reset early stopping
+            bestAccuracy = 0;
+            epochsSinceImprovement = 0;
+
+            // Reset max gradients for relative display
+            maxHidden1Grad = 0.001;
+            maxHidden2Grad = 0.001;
+            maxOutputGrad = 0.001;
+
+            // Reset visualization state
+            flowParticles = [];  // Clear all particles
+            frozenPredictions = null;  // Clear frozen cache
+            frozenNetworkState = null;  // Clear frozen network state
 
             // Log initial state
             console.log('=== NEURAL NETWORK INITIALIZED ===');
             console.log('Seed:', params.seed);
-            console.log('Architecture: 64 → 16 → 2');
+            console.log(`Architecture: 64 → ${params.hiddenSize} → ${params.hiddenSize} → 2`);
             console.log('Training samples:', trainingData.length);
             console.log('Test samples:', testData.length);
+            console.log('Max epochs:', params.maxEpochs);
+            console.log('Accuracy threshold:', (params.accuracyThreshold * 100).toFixed(0) + '%');
 
             // Test initial predictions (before any training)
             const initialPreds = evaluateNetwork();
@@ -835,6 +991,32 @@
                 });
             }
 
+            // Early stopping check (if enabled)
+            if (params.earlyStop) {
+                // Check if there's meaningful improvement
+                if (currentAcc > bestAccuracy + improvementThreshold) {
+                    bestAccuracy = currentAcc;
+                    epochsSinceImprovement = 0;
+                    if (epoch > 0 && epoch % 10 === 0) {
+                        console.log(`  ✓ New best accuracy: ${(bestAccuracy * 100).toFixed(1)}%`);
+                    }
+                } else {
+                    epochsSinceImprovement++;
+                }
+
+                // Stop if no improvement for patience epochs
+                if (epochsSinceImprovement >= earlyStopPatience) {
+                    console.log(`\n⚠️ Early stopping at epoch ${epoch} (no improvement for ${earlyStopPatience} epochs)`);
+                    console.log(`Best accuracy: ${(bestAccuracy * 100).toFixed(1)}%`);
+                    console.log(`Current accuracy: ${(currentAcc * 100).toFixed(1)}%`);
+                    totalEpochs = epoch;  // Set totalEpochs to current to stop training
+                    isTraining = false;
+                    // Update button to reflect stopped state
+                    const btn = document.getElementById('trainButton');
+                    if (btn) btn.textContent = '▶ Resume';
+                }
+            }
+
             epoch++;
 
             // Log final results
@@ -872,11 +1054,11 @@
         // VISUALIZATION
         // ═══════════════════════════════════════════════════════════════════════
 
-        let canvasWidth = 1400;
+        let canvasWidth = 1550;  // Wider to prevent right-side collision
         let canvasHeight = 900;
 
         // Layout regions
-        let networkX = 700;
+        let networkX = 750;  // More space from left side
         let networkY = 450;
         let networkScale = 1;
 
@@ -891,32 +1073,59 @@
         function draw() {
             background(250, 249, 245);
 
-            // Train multiple times per frame based on speed
+            // Calculate effective animation speed (synchronized with training speed)
+            // trainingSpeed controls training rate, flowSpeed acts as a multiplier for fine-tuning
+            effectiveAnimationSpeed = params.trainingSpeed * (params.flowSpeed / 1.5);
+
+            // Increment training frame counter only when actively training
             if (isTraining && epoch < totalEpochs) {
-                for (let i = 0; i < params.trainingSpeed; i++) {
-                    if (epoch < totalEpochs) {
-                        trainEpoch();
+                trainingFrameCount++;
+            }
+
+            // Train based on speed (supports fractional values like 0.1)
+            if (isTraining && epoch < totalEpochs) {
+                // For speeds >= 1.0: run multiple epochs per frame
+                if (params.trainingSpeed >= 1.0) {
+                    const epochsToRun = Math.floor(params.trainingSpeed);
+                    for (let i = 0; i < epochsToRun; i++) {
+                        if (epoch < totalEpochs) {
+                            trainEpoch();
+                        }
+                    }
+                }
+                // For speeds < 1.0: accumulate and run when we reach 1.0
+                else {
+                    epochAccumulator += params.trainingSpeed;
+                    if (epochAccumulator >= 1.0) {
+                        epochAccumulator -= 1.0;
+                        if (epoch < totalEpochs) {
+                            trainEpoch();
+                        }
                     }
                 }
             }
 
-            // Animate phase transition - slower for better observation
+            // Animate phase transition - synchronized with training speed
             // Forward pass represents: processing a batch of samples through network
             // Backward pass represents: computing gradients and updating weights for that batch
-            phaseProgress += 0.012 * params.flowSpeed;  // Slower transitions
-            if (phaseProgress >= 1) {
-                phaseProgress = 0;
-                currentPhase = currentPhase === 'forward' ? 'backward' : 'forward';
+            if (isTraining && epoch < totalEpochs) {
+                phaseProgress += 0.012 * effectiveAnimationSpeed;  // Synchronized transitions
+                if (phaseProgress >= 1) {
+                    phaseProgress = 0;
+                    currentPhase = currentPhase === 'forward' ? 'backward' : 'forward';
+                }
             }
 
-            // Draw components
+            // Draw components (always visible)
             drawPredictionGrid();
             drawNeuralNetwork();
             drawMetrics();
             drawPhaseIndicator();  // Show what phase means
 
-            // Update stats
-            updateStats();
+            // Update stats (only when training active)
+            if (isTraining || epoch >= totalEpochs) {
+                updateStats();
+            }
         }
 
         function drawPredictionGrid() {
@@ -937,10 +1146,50 @@
             textFont('Poppins');
             text('Sample Predictions', 0, -45);
 
-            // Legend - explain colors
+            // Legend - explain colors (dynamic based on threshold)
             textSize(9);
             fill(100);
-            text('Confidence: 0-80% Orange (uncertain) → 80-100% Blue (confident)', 0, -30);
+            const thresholdPercent = Math.round(params.accuracyThreshold * 100);
+            text(`Confidence: 0-${thresholdPercent}% Orange (uncertain) → ${thresholdPercent}-100% Blue (confident)`, 0, -30);
+
+            // Cache predictions when pausing, use cache when paused
+            if (!isTraining && frozenPredictions === null && testData.length > 0) {
+                // First frame of pause - save current network state FIRST
+                frozenNetworkState = {
+                    inputActivations: [...network.inputActivations],
+                    hidden1Activations: [...network.hidden1Activations],
+                    hidden2Activations: [...network.hidden2Activations],
+                    outputActivations: [...network.outputActivations],
+                    hidden1Gradients: [...network.hidden1Gradients],
+                    hidden2Gradients: [...network.hidden2Gradients],
+                    outputGradients: [...network.outputGradients]
+                };
+
+                // Then cache predictions
+                frozenPredictions = [];
+                for (let i = 0; i < rows * cols && i < testData.length; i++) {
+                    const sample = testData[i];
+                    network.forward(sample.data);
+                    frozenPredictions.push({
+                        pred: [...network.outputActivations],
+                        type: sample.type,
+                        data: sample.data
+                    });
+                }
+
+                // Restore network state after caching predictions
+                network.inputActivations = [...frozenNetworkState.inputActivations];
+                network.hidden1Activations = [...frozenNetworkState.hidden1Activations];
+                network.hidden2Activations = [...frozenNetworkState.hidden2Activations];
+                network.outputActivations = [...frozenNetworkState.outputActivations];
+                network.hidden1Gradients = [...frozenNetworkState.hidden1Gradients];
+                network.hidden2Gradients = [...frozenNetworkState.hidden2Gradients];
+                network.outputGradients = [...frozenNetworkState.outputGradients];
+            } else if (isTraining || epoch >= totalEpochs) {
+                // Training active - clear cache
+                frozenPredictions = null;
+                frozenNetworkState = null;
+            }
 
             for (let i = 0; i < rows * cols && i < testData.length; i++) {
                 const row = floor(i / cols);
@@ -948,25 +1197,37 @@
                 const x = col * (cellSize + 10);
                 const y = row * (cellSize + 10) + row * 12; // Extra spacing for text
 
-                const sample = testData[i];
+                let pred, predClass, correct, confidence, confidencePercent, sample;
 
-                // Forward pass to get prediction
-                network.forward(sample.data);
-                const pred = network.outputActivations;
-                const predClass = pred[0] > pred[1] ? 0 : 1;
-                const correct = predClass === sample.type;
-                const confidence = Math.max(...pred); // 0.5 to 1.0
-                const confidencePercent = confidence * 100;
+                if (!isTraining && frozenPredictions && frozenPredictions[i]) {
+                    // Use cached predictions when paused
+                    const cached = frozenPredictions[i];
+                    pred = cached.pred;
+                    predClass = pred[0] > pred[1] ? 0 : 1;
+                    correct = predClass === cached.type;
+                    confidence = Math.max(...pred);
+                    confidencePercent = confidence * 100;
+                    sample = { type: cached.type, data: cached.data };
+                } else {
+                    // Calculate fresh predictions when training
+                    sample = testData[i];
+                    network.forward(sample.data);
+                    pred = network.outputActivations;
+                    predClass = pred[0] > pred[1] ? 0 : 1;
+                    correct = predClass === sample.type;
+                    confidence = Math.max(...pred);
+                    confidencePercent = confidence * 100;
+                }
 
-                // Confidence threshold approach:
-                // 0-80% = Orange (uncertain, effectively wrong)
-                // 80-100% = Blue (confident, good classification)
+                // Confidence threshold approach (configurable):
+                // 0-threshold = Orange (uncertain, effectively wrong)
+                // threshold-100% = Blue (confident, good classification)
 
                 let r, g, b;
-                const threshold = 0.80; // 80% confidence threshold
+                const threshold = params.accuracyThreshold; // Configurable confidence threshold
 
                 if (confidence < threshold) {
-                    // Below threshold: Orange spectrum (0% to 80%)
+                    // Below threshold: Orange spectrum
                     // Transition from dark orange to lighter orange
                     const t = confidence / threshold; // 0.0 to 1.0
                     const baseOrange = {r: 217, g: 119, b: 87};
@@ -1021,59 +1282,89 @@
             push();
             translate(networkX, networkY);
 
-            const layerSpacing = 250;
-            const neuronSpacing = 40;
+            const layerSpacing = 200;  // Reduced spacing to fit 4 layers
 
-            // Calculate positions
+            // Dynamic neuron spacing based on largest hidden layer
+            const maxHiddenSize = Math.max(network.hidden1Size, network.hidden2Size);
+            const availableHeight = 700;  // Available vertical space
+            const neuronSpacing = Math.min(40, availableHeight / (maxHiddenSize + 1));
+
+            // Calculate positions for 4 layers: input, hidden1, hidden2, output
             const inputPos = [];
             const inputAbstract = 8; // Show 8 input neurons (representing 8x8 grid)
             for (let i = 0; i < inputAbstract; i++) {
                 inputPos.push({
-                    x: -layerSpacing,
+                    x: -layerSpacing * 1.5,  // Further left
                     y: (i - inputAbstract / 2) * neuronSpacing
                 });
             }
 
-            const hiddenPos = [];
-            for (let i = 0; i < network.hiddenSize; i++) {
-                hiddenPos.push({
-                    x: 0,
-                    y: (i - network.hiddenSize / 2) * neuronSpacing
+            const hidden1Pos = [];
+            for (let i = 0; i < network.hidden1Size; i++) {
+                hidden1Pos.push({
+                    x: -layerSpacing * 0.5,  // First hidden layer
+                    y: (i - network.hidden1Size / 2) * neuronSpacing
+                });
+            }
+
+            const hidden2Pos = [];
+            for (let i = 0; i < network.hidden2Size; i++) {
+                hidden2Pos.push({
+                    x: layerSpacing * 0.5,  // Second hidden layer
+                    y: (i - network.hidden2Size / 2) * neuronSpacing
                 });
             }
 
             const outputPos = [];
             for (let i = 0; i < network.outputSize; i++) {
                 outputPos.push({
-                    x: layerSpacing,
+                    x: layerSpacing * 1.5,  // Further right
                     y: (i - network.outputSize / 2) * 80
                 });
             }
 
-            // Draw synapses (input -> hidden)
-            drawSynapses(inputPos, hiddenPos, network.W1,
-                         currentPhase, phaseProgress, 'input-hidden');
+            // Draw synapses (only if enabled)
+            if (params.showSynapses) {
+                drawSynapses(inputPos, hidden1Pos, network.W1,
+                             currentPhase, phaseProgress, 'input-hidden1');
 
-            // Draw synapses (hidden -> output)
-            drawSynapses(hiddenPos, outputPos, network.W2,
-                         currentPhase, phaseProgress, 'hidden-output');
+                drawSynapses(hidden1Pos, hidden2Pos, network.W2,
+                             currentPhase, phaseProgress, 'hidden1-hidden2');
+
+                drawSynapses(hidden2Pos, outputPos, network.W3,
+                             currentPhase, phaseProgress, 'hidden2-output');
+            }
 
             // Draw neurons
-            drawNeurons(inputPos, network.inputActivations, network.hiddenGradients, 'input');
-            drawNeurons(hiddenPos, network.hiddenActivations, network.hiddenGradients, 'hidden');
+            drawNeurons(inputPos, network.inputActivations, network.hidden1Gradients, 'input');
+            drawNeurons(hidden1Pos, network.hidden1Activations, network.hidden1Gradients, 'hidden1');
+            drawNeurons(hidden2Pos, network.hidden2Activations, network.hidden2Gradients, 'hidden2');
             drawNeurons(outputPos, network.outputActivations, network.outputGradients, 'output');
 
-            // Draw layer labels
+            // Draw layer labels (dynamic based on actual layer sizes)
             fill(20);
             noStroke();
-            textSize(12);
+            textSize(11);
             textAlign(CENTER);
-            text('Input', -layerSpacing, neuronSpacing * 5);
-            text('(8×8 grid)', -layerSpacing, neuronSpacing * 5 + 15);
-            text('Hidden Layer', 0, neuronSpacing * 9);
-            text('(16 neurons)', 0, neuronSpacing * 9 + 15);
-            text('Output', layerSpacing, 80);
-            text('(Circle | Square)', layerSpacing, 95);
+
+            // Input layer label
+            const inputLabelY = (inputAbstract / 2) * neuronSpacing + 20;
+            text('Input', -layerSpacing * 1.5, inputLabelY);
+            text('(64 pixels)', -layerSpacing * 1.5, inputLabelY + 15);
+
+            // Hidden layer 1 label
+            const hidden1LabelY = (network.hidden1Size / 2) * neuronSpacing + 20;
+            text('Hidden 1', -layerSpacing * 0.5, hidden1LabelY);
+            text(`(${network.hidden1Size} neurons)`, -layerSpacing * 0.5, hidden1LabelY + 15);
+
+            // Hidden layer 2 label
+            const hidden2LabelY = (network.hidden2Size / 2) * neuronSpacing + 20;
+            text('Hidden 2', layerSpacing * 0.5, hidden2LabelY);
+            text(`(${network.hidden2Size} neurons)`, layerSpacing * 0.5, hidden2LabelY + 15);
+
+            // Output layer label
+            text('Output', layerSpacing * 1.5, 80);
+            text('(Circle | Square)', layerSpacing * 1.5, 95);
 
             pop();
         }
@@ -1090,7 +1381,8 @@
                 this.phase = phase;
                 this.weight = weight;
                 this.progress = 0;
-                this.speed = random(0.015, 0.025) * params.flowSpeed;
+                // Use effectiveAnimationSpeed for synchronized animation
+                this.speed = random(0.015, 0.025) * effectiveAnimationSpeed;
                 this.life = 1.0;
                 this.size = map(Math.abs(weight), 0, 1, 3, 8);
             }
@@ -1117,28 +1409,28 @@
                 push();
                 translate(x, y);
 
-                // Glow effect based on phase
+                // Glow effect based on phase - EXACT SAME STRUCTURE for both!
                 if (this.phase === 'forward') {
-                    // Forward: bright white/blue energy
+                    // Forward: blue energy with white core
                     for (let r = this.size * 3; r > 0; r -= 2) {
-                        const alpha = map(r, 0, this.size * 3, 0, 150) * this.life;
-                        fill(200, 220, 255, alpha);
+                        const alpha = map(r, 0, this.size * 3, 0, 140) * this.life;
+                        fill(180, 210, 255, alpha);  // Slightly richer blue
                         noStroke();
                         circle(0, 0, r);
                     }
-                    // Core
+                    // Core - pure white
                     fill(255, 255, 255, 200 * this.life);
                     circle(0, 0, this.size);
                 } else {
-                    // Backward: red/orange gradient
+                    // Backward: soft peachy orange with white core - SAME STRUCTURE!
                     for (let r = this.size * 3; r > 0; r -= 2) {
-                        const alpha = map(r, 0, this.size * 3, 0, 150) * this.life;
-                        fill(217, 119, 87, alpha);
+                        const alpha = map(r, 0, this.size * 3, 0, 130) * this.life;  // Brighter to match blue density
+                        fill(235, 150, 120, alpha);  // Soft peachy orange
                         noStroke();
                         circle(0, 0, r);
                     }
-                    // Core
-                    fill(255, 100, 50, 220 * this.life);
+                    // Core - pure white (identical to forward)
+                    fill(255, 255, 255, 200 * this.life);
                     circle(0, 0, this.size);
                 }
 
@@ -1151,7 +1443,7 @@
                     if (this.phase === 'forward') {
                         stroke(255, 255, 255, 150 * this.life);
                     } else {
-                        stroke(255, 100, 50, 150 * this.life);
+                        stroke(235, 150, 120, 150 * this.life);  // Softer orange for arrow too
                     }
                     strokeWeight(1);
 
@@ -1175,7 +1467,11 @@
 
             for (let i = 0; i < fromPos.length; i++) {
                 for (let j = 0; j < toPos.length; j++) {
-                    if (random() > sampleRate) continue;
+                    // Use deterministic selection based on indices + epoch
+                    // Epoch provides variety during training, but stays frozen when paused
+                    // This replaces random() to prevent flashing
+                    const hash = (i * 73 + j * 37 + epoch * 7) % 100;
+                    if (hash / 100 > sampleRate) continue;
 
                     const weight = weights[i] ? weights[i][j] : 0;
                     const absWeight = Math.abs(weight);
@@ -1237,33 +1533,63 @@
             }
 
             // Manage flow particles
-            // Remove dead particles
-            flowParticles = flowParticles.filter(p => !p.isDead());
+            // Particle system (only if enabled)
+            if (params.showParticles) {
+                if (isTraining && epoch < totalEpochs) {
+                    // Training active - create new particles and update existing
+                    // Remove dead particles
+                    flowParticles = flowParticles.filter(p => !p.isDead());
 
-            // Add new particles occasionally for important connections
-            if (frameCount % 3 === 0) {
-                for (let i = 0; i < fromPos.length; i++) {
-                    for (let j = 0; j < toPos.length; j++) {
-                        const weight = weights[i] ? weights[i][j] : 0;
-                        const absWeight = Math.abs(weight);
+                    // Add new particles occasionally for important connections
+                    // Creation rate adjusts with animation speed to maintain consistent visual density
+                    // When particles move slower, we create them less frequently
+                    const baseInterval = 3;  // Base creation interval (frames)
+                    const adjustedInterval = Math.max(1, Math.round(baseInterval / effectiveAnimationSpeed));
 
-                        // Only add particles for significant weights
-                        if (absWeight > 0.2 && random() < 0.05) {
-                            const x1 = fromPos[i].x;
-                            const y1 = fromPos[i].y;
-                            const x2 = toPos[j].x;
-                            const y2 = toPos[j].y;
+                    // Use trainingFrameCount instead of frameCount for consistent timing across pause/resume
+                    if (trainingFrameCount % adjustedInterval === 0) {
+                        for (let i = 0; i < fromPos.length; i++) {
+                            for (let j = 0; j < toPos.length; j++) {
+                                const weight = weights[i] ? weights[i][j] : 0;
+                                const absWeight = Math.abs(weight);
 
-                            flowParticles.push(new FlowParticle(x1, y1, x2, y2, currentPhase, weight));
+                                // Only add particles for significant weights
+                                // Use deterministic pseudo-random based on training frame for consistency
+                                const particleHash = (i * 97 + j * 53 + trainingFrameCount * 31) % 1000;
+                                if (absWeight > 0.2 && particleHash < 50) {  // ~5% chance
+                                    const x1 = fromPos[i].x;
+                                    const y1 = fromPos[i].y;
+                                    const x2 = toPos[j].x;
+                                    const y2 = toPos[j].y;
+
+                                    flowParticles.push(new FlowParticle(x1, y1, x2, y2, currentPhase, weight));
+                                }
+                            }
                         }
                     }
-                }
-            }
 
-            // Update and draw particles
-            for (let particle of flowParticles) {
-                particle.update();
-                particle.display();
+                    // Update and draw particles
+                    for (let particle of flowParticles) {
+                        particle.update();
+                        particle.display();
+                    }
+                } else if (epoch >= totalEpochs) {
+                    // Training completed - let existing particles fade away naturally
+                    flowParticles = flowParticles.filter(p => !p.isDead());
+                    for (let particle of flowParticles) {
+                        particle.update();  // Continue updating so they fade away
+                        particle.display();
+                    }
+                    // Don't create new particles - they'll naturally disappear
+                } else {
+                    // Training paused - freeze particles in place
+                    for (let particle of flowParticles) {
+                        particle.display();  // Display only, no update = frozen in place
+                    }
+                }
+            } else {
+                // Checkbox unchecked - clear all particles
+                flowParticles = [];
             }
         }
 
@@ -1287,7 +1613,7 @@
                         const haloSize = map(gradient, 0, 1, 0, 25) * params.glowIntensity;
                         for (let r = haloSize; r > 0; r -= 3) {
                             const alpha = map(r, 0, haloSize, transitionAlpha, 0);
-                            fill(217, 119, 87, alpha);
+                            fill(235, 150, 120, alpha);  // Softer peachy orange
                             noStroke();
                             circle(0, 0, r * 2);
                         }
@@ -1295,33 +1621,33 @@
                         const glowSize = map(activation, 0, 1, 5, 20) * params.glowIntensity;
                         for (let r = glowSize; r > 0; r -= 2) {
                             const alpha = map(r, 0, glowSize, transitionAlpha, 0);
-                            fill(200, 220, 255, alpha);
+                            fill(180, 210, 255, alpha);  // Richer blue to match particles
                             noStroke();
                             circle(0, 0, r * 2);
                         }
                     }
                 }
 
-                // Backward pass: Gradient halo (red/orange)
+                // Backward pass: Gradient halo (soft peachy orange)
                 if (currentPhase === 'backward' && gradient > 0) {
                     const haloSize = map(gradient, 0, 1, 0, 40) * params.glowIntensity;
 
                     // Pulsing effect
                     const pulse = sin(phaseProgress * TWO_PI) * 0.2 + 1;
 
-                    // Multi-layer gradient halo
+                    // Multi-layer gradient halo with softer colors (brighter to match blue)
                     for (let r = haloSize * pulse; r > 0; r -= 2) {
-                        const alpha = map(r, 0, haloSize * pulse, 120, 0);
-                        // Color shifts from orange to red as it expands
-                        const colorShift = map(r, 0, haloSize, 0, 50);
-                        fill(217 + colorShift, 119 - colorShift, 87 - colorShift, alpha * phaseProgress);
+                        const alpha = map(r, 0, haloSize * pulse, 110, 0);  // Increased to match blue density
+                        // Subtle color shift within peachy orange spectrum
+                        const colorShift = map(r, 0, haloSize, 0, 20);
+                        fill(235 + colorShift, 150 - colorShift/2, 120 - colorShift/2, alpha * phaseProgress);
                         noStroke();
                         circle(0, 0, r * 2);
                     }
 
-                    // Add rotating gradient indicators
+                    // Add rotating gradient indicators with softer color
                     noFill();
-                    stroke(255, 100, 50, 150 * phaseProgress);
+                    stroke(235, 150, 120, 170 * phaseProgress);  // Increased brightness
                     strokeWeight(2);
                     const rotation = frameCount * 0.05;
                     for (let a = 0; a < TWO_PI; a += PI / 3) {
@@ -1343,9 +1669,9 @@
                         const waveSize = glowSize * (1 + wavePhase * 0.5);
 
                         for (let r = waveSize; r > 0; r -= 3) {
-                            const alpha = map(r, 0, waveSize, 100, 0) * (1 - wavePhase);
-                            // Blue-white gradient
-                            fill(200 + 55 * activation, 220 + 35 * activation, 255, alpha);
+                            const alpha = map(r, 0, waveSize, 90, 0) * (1 - wavePhase);
+                            // Richer blue-white gradient (matches particle color)
+                            fill(180 + 75 * activation, 210 + 45 * activation, 255, alpha);
                             noStroke();
                             circle(0, 0, r * 2);
                         }
@@ -1374,13 +1700,13 @@
                 const brightness = map(activation, 0, 1, 50, 255);
 
                 if (currentPhase === 'forward') {
-                    // Forward: bright, energetic
+                    // Forward: bright, energetic (richer blue)
                     fill(brightness, brightness, 255);
-                    stroke(200, 220, 255, 150);
+                    stroke(180, 210, 255, 150);
                 } else {
-                    // Backward: warmer, processing
+                    // Backward: warmer, processing (soft peachy orange)
                     fill(brightness * 0.9, brightness * 0.85, 255 * 0.95);
-                    stroke(217, 119, 87, 150);
+                    stroke(235, 150, 120, 150);
                 }
 
                 strokeWeight(2 + sin(phaseProgress * TWO_PI) * 0.5);
@@ -1408,7 +1734,7 @@
         }
 
         function drawMetrics() {
-            const metricsX = 1050;
+            const metricsX = 1150;  // Moved further right to fit in wider canvas
             const metricsY = 50;
             const metricsWidth = 300;
 
@@ -1436,27 +1762,41 @@
             fill(20);
             text('Layer Gradients', 0, 280);
 
-            if (network.hiddenGradients.length > 0) {
-                const avgHiddenGrad = network.hiddenGradients.reduce((a, b) =>
-                    a + Math.abs(b), 0) / network.hiddenGradients.length;
-                drawBar('Hidden', avgHiddenGrad, 0, 300, metricsWidth, 20);
+            if (network.hidden1Gradients.length > 0) {
+                const avgHidden1Grad = network.hidden1Gradients.reduce((a, b) =>
+                    a + Math.abs(b), 0) / network.hidden1Gradients.length;
+                // Update max gradient for relative scaling
+                maxHidden1Grad = Math.max(maxHidden1Grad, avgHidden1Grad);
+                // Display relative bar (0-1 scaled to max seen)
+                const relativeValue = avgHidden1Grad / maxHidden1Grad;
+                drawGradientBar('Hidden1', avgHidden1Grad, relativeValue, 0, 300, metricsWidth, 20);
+            }
+
+            if (network.hidden2Gradients.length > 0) {
+                const avgHidden2Grad = network.hidden2Gradients.reduce((a, b) =>
+                    a + Math.abs(b), 0) / network.hidden2Gradients.length;
+                maxHidden2Grad = Math.max(maxHidden2Grad, avgHidden2Grad);
+                const relativeValue = avgHidden2Grad / maxHidden2Grad;
+                drawGradientBar('Hidden2', avgHidden2Grad, relativeValue, 0, 330, metricsWidth, 20);
             }
 
             if (network.outputGradients.length > 0) {
                 const avgOutputGrad = network.outputGradients.reduce((a, b) =>
                     a + Math.abs(b), 0) / network.outputGradients.length;
-                drawBar('Output', avgOutputGrad, 0, 330, metricsWidth, 20);
+                maxOutputGrad = Math.max(maxOutputGrad, avgOutputGrad);
+                const relativeValue = avgOutputGrad / maxOutputGrad;
+                drawGradientBar('Output', avgOutputGrad, relativeValue, 0, 360, metricsWidth, 20);
             }
 
-            // Current output probabilities
+            // Current output probabilities (with more spacing from gradients)
             if (network.outputActivations.length > 0) {
                 textSize(12);
                 fill(20);
-                text('Current Output', 0, 380);
+                text('Current Output', 0, 400);
 
                 const probs = network.outputActivations;
-                drawBar('Circle', probs[0], 0, 400, metricsWidth, 20, color(106, 155, 204));
-                drawBar('Square', probs[1], 0, 430, metricsWidth, 20, color(120, 140, 93));
+                drawBar('Circle', probs[0], 0, 420, metricsWidth, 20, color(106, 155, 204));
+                drawBar('Square', probs[1], 0, 450, metricsWidth, 20, color(120, 140, 93));
             }
 
             pop();
@@ -1526,9 +1866,50 @@
             textAlign(LEFT);
             text(label, 5, h / 2 + 4);
 
-            // Value
+            // Value with scientific notation for very small gradients
             textAlign(RIGHT);
-            text(value.toFixed(3), w - 5, h / 2 + 4);
+            let displayValue;
+            if (value < 0.0001 && value > 0) {
+                // Use scientific notation for very small values
+                displayValue = value.toExponential(2);
+            } else {
+                displayValue = value.toFixed(4);
+            }
+            text(displayValue, w - 5, h / 2 + 4);
+
+            pop();
+        }
+
+        function drawGradientBar(label, actualValue, relativeValue, x, y, w, h, col = color(235, 150, 120)) {
+            push();
+            translate(x, y);
+
+            // Background
+            fill(240);
+            noStroke();
+            rect(0, 0, w, h, 3);
+
+            // Bar based on RELATIVE value (0-1 scaled to max)
+            const barWidth = map(relativeValue, 0, 1, 0, w);
+            fill(col);
+            rect(0, 0, barWidth, h, 3);
+
+            // Label
+            fill(20);
+            textSize(10);
+            textAlign(LEFT);
+            text(label, 5, h / 2 + 4);
+
+            // Display ACTUAL value with scientific notation for very small gradients
+            textAlign(RIGHT);
+            let displayValue;
+            if (actualValue < 0.0001 && actualValue > 0) {
+                // Use scientific notation for very small values
+                displayValue = actualValue.toExponential(2);
+            } else {
+                displayValue = actualValue.toFixed(4);
+            }
+            text(displayValue, w - 5, h / 2 + 4);
 
             pop();
         }
@@ -1547,7 +1928,7 @@
             const boxHeight = 70;
 
             fill(255, 255, 255, 230);
-            stroke(currentPhase === 'forward' ? color(106, 155, 204) : color(217, 119, 87));
+            stroke(currentPhase === 'forward' ? color(106, 155, 204) : color(235, 150, 120));
             strokeWeight(3);
             rect(-boxWidth/2, -boxHeight/2, boxWidth, boxHeight, 8);
 
@@ -1578,8 +1959,8 @@
                 rect(-barWidth/2, 12, barWidth * phaseProgress, barHeight, 4);
 
             } else {
-                // Backward pass explanation
-                fill(217, 119, 87);
+                // Backward pass explanation (soft peachy orange)
+                fill(235, 150, 120);
                 textSize(16);
                 textStyle(BOLD);
                 text('⬇ BACKWARD PASS', 0, -15);
@@ -1587,7 +1968,7 @@
                 fill(60, 60, 60);
                 textSize(11);
                 textStyle(NORMAL);
-                text('Computing gradients → Updating all 1,074 weights', 0, 5);
+                text('Computing gradients → Updating all 1,346 weights', 0, 5);
 
                 // Progress bar
                 const barWidth = 500;
@@ -1595,7 +1976,7 @@
                 fill(230, 230, 230);
                 rect(-barWidth/2, 12, barWidth, barHeight, 4);
 
-                fill(217, 119, 87, 200);
+                fill(235, 150, 120, 200);
                 rect(-barWidth/2, 12, barWidth * phaseProgress, barHeight, 4);
             }
 
@@ -1652,14 +2033,17 @@
                 // FORWARD PASS - What you're seeing on screen
                 html = `<div style="color: #6a9bcc; font-weight: bold; margin-bottom: 8px;">⬆ PREDICTION PHASE</div>`;
 
-                // Count active neurons
+                // Count active neurons across both hidden layers
                 let activeNeurons = 0;
-                for (let i = 0; i < network.hiddenActivations.length; i++) {
-                    if (network.hiddenActivations[i] > 0.1) activeNeurons++;
+                for (let i = 0; i < network.hidden1Activations.length; i++) {
+                    if (network.hidden1Activations[i] > 0.1) activeNeurons++;
+                }
+                for (let i = 0; i < network.hidden2Activations.length; i++) {
+                    if (network.hidden2Activations[i] > 0.1) activeNeurons++;
                 }
 
                 html += `<b>Network Activity:</b><br>`;
-                html += `Active neurons: ${activeNeurons}/16<br>`;
+                html += `Active neurons: ${activeNeurons}/32<br>`;
                 html += `Current loss: ${currentLoss.toFixed(4)}<br>`;
                 html += `Confidence: ${(Math.max(...network.outputActivations) * 100).toFixed(1)}%<br>`;
 
@@ -1672,11 +2056,20 @@
                 // BACKWARD PASS - What you're seeing on screen
                 html = `<div style="color: #d97757; font-weight: bold; margin-bottom: 8px;">⬇ LEARNING PHASE</div>`;
 
-                // Calculate gradient strength
+                // Calculate gradient strength across both hidden layers
                 let avgGrad = 0;
-                if (network.hiddenGradients.length > 0) {
-                    avgGrad = network.hiddenGradients.reduce((a, b) =>
-                        a + Math.abs(b), 0) / network.hiddenGradients.length;
+                let totalGrad = 0;
+                let count = 0;
+                if (network.hidden1Gradients.length > 0) {
+                    totalGrad += network.hidden1Gradients.reduce((a, b) => a + Math.abs(b), 0);
+                    count += network.hidden1Gradients.length;
+                }
+                if (network.hidden2Gradients.length > 0) {
+                    totalGrad += network.hidden2Gradients.reduce((a, b) => a + Math.abs(b), 0);
+                    count += network.hidden2Gradients.length;
+                }
+                if (count > 0) {
+                    avgGrad = totalGrad / count;
                 }
 
                 // Weight change this epoch
@@ -1684,9 +2077,11 @@
                     Math.abs(lossHistory[lossHistory.length - 1] - lossHistory[lossHistory.length - 2]) : 0;
 
                 html += `<b>Learning Dynamics:</b><br>`;
-                html += `Gradient strength: ${avgGrad.toFixed(5)}<br>`;
+                // Use scientific notation for very small gradients
+                const gradDisplay = avgGrad < 0.0001 && avgGrad > 0 ? avgGrad.toExponential(2) : avgGrad.toFixed(5);
+                html += `Gradient strength: ${gradDisplay}<br>`;
                 html += `Loss change: ${recentChange > 0 ? '-' : ''}${recentChange.toFixed(4)}<br>`;
-                html += `Weights updated: 1,074<br>`;
+                html += `Weights updated: 1,346<br>`;
 
                 html += `<br><b>What's Flowing:</b><br>`;
                 html += `Red particles = corrections<br>`;
@@ -1718,24 +2113,64 @@
         // UI HANDLERS
         // ═══════════════════════════════════════════════════════════════════════
 
-        function updateParam(paramName, value) {
+        function updateParam(paramName, value, requiresReset = false) {
+            // Handle boolean values (checkboxes)
+            if (['earlyStop', 'showSynapses', 'showParticles'].includes(paramName)) {
+                params[paramName] = value;
+                return;
+            }
+
+            // Parse numeric value
             params[paramName] = parseFloat(value);
-            document.getElementById(paramName + '-value').textContent =
-                paramName === 'learningRate' ? parseFloat(value).toFixed(3) :
-                paramName === 'trainingSpeed' || paramName === 'batchSize' ? parseInt(value) :
-                parseFloat(value).toFixed(1);
+
+            // Update display with appropriate formatting
+            const displayElement = document.getElementById(paramName + '-value');
+            if (displayElement) {
+                if (paramName === 'learningRate') {
+                    displayElement.textContent = parseFloat(value).toFixed(3);
+                } else if (paramName === 'accuracyThreshold') {
+                    displayElement.textContent = Math.round(parseFloat(value) * 100) + '%';
+                } else if (paramName === 'trainingSpeed') {
+                    displayElement.textContent = parseFloat(value).toFixed(1);
+                } else if (['batchSize', 'dataSamples', 'maxEpochs', 'hiddenSize'].includes(paramName)) {
+                    displayElement.textContent = parseInt(value);
+                } else {
+                    displayElement.textContent = parseFloat(value).toFixed(1);
+                }
+            }
+
+            // Warn if this parameter requires training reset
+            if (requiresReset) {
+                console.log(`⚠️ ${paramName} changed - Click "Reset" to apply changes`);
+            }
         }
 
         function toggleTraining() {
             isTraining = !isTraining;
             const btn = document.getElementById('trainButton');
-            btn.textContent = isTraining ? '⏸ Pause' : '▶ Resume';
+            if (btn) {
+                btn.textContent = isTraining ? '⏸ Pause' : '▶ Resume';
+            }
+
+            if (isTraining) {
+                // Clear frozen cache when resuming
+                frozenPredictions = null;
+                frozenNetworkState = null;
+            }
+
+            console.log(`Training ${isTraining ? 'RESUMED' : 'PAUSED'}${!isTraining ? ' (UI frozen - complete freeze)' : ''}`);
         }
 
         function resetTraining() {
             initializeTraining();
             isTraining = true;
-            document.getElementById('trainButton').textContent = '⏸ Pause';
+            frozenPredictions = null;  // Clear frozen cache
+            frozenNetworkState = null;  // Clear frozen network state
+            const btn = document.getElementById('trainButton');
+            if (btn) {
+                btn.textContent = '⏸ Pause';
+            }
+            console.log('Training RESET and STARTED');
         }
 
         function updateSeedDisplay() {
@@ -1747,7 +2182,7 @@
             let newSeed = parseInt(input.value);
             if (newSeed && newSeed > 0) {
                 params.seed = newSeed;
-                initializeTraining();
+                resetTraining();  // Use resetTraining to properly reset all state
             } else {
                 updateSeedDisplay();
             }
@@ -1756,19 +2191,19 @@
         function previousSeed() {
             params.seed = Math.max(1, params.seed - 1);
             updateSeedDisplay();
-            initializeTraining();
+            resetTraining();  // Use resetTraining to properly reset all state
         }
 
         function nextSeed() {
             params.seed = params.seed + 1;
             updateSeedDisplay();
-            initializeTraining();
+            resetTraining();  // Use resetTraining to properly reset all state
         }
 
         function randomSeedAndUpdate() {
             params.seed = Math.floor(Math.random() * 999999) + 1;
             updateSeedDisplay();
-            initializeTraining();
+            resetTraining();  // Use resetTraining to properly reset all state
         }
 
         function printDiagnostics() {
@@ -1805,16 +2240,21 @@
             console.log('\n--- CURRENT ACTIVATIONS ---');
             if (network && testData.length > 0) {
                 network.forward(testData[0].data);
-                console.log('Hidden Layer (first 5 neurons):', network.hiddenActivations.slice(0, 5).map(x => x.toFixed(4)).join(', '));
+                console.log('Hidden1 Layer (first 5):', network.hidden1Activations.slice(0, 5).map(x => x.toFixed(4)).join(', '));
+                console.log('Hidden2 Layer (first 5):', network.hidden2Activations.slice(0, 5).map(x => x.toFixed(4)).join(', '));
                 console.log('Output Layer:', network.outputActivations.map(x => x.toFixed(6)).join(', '));
                 console.log('Predicted:', network.outputActivations[0] > network.outputActivations[1] ? 'Circle' : 'Square');
                 console.log('Actual:', testData[0].type === 0 ? 'Circle' : 'Square');
             }
 
             console.log('\n--- GRADIENT MAGNITUDES ---');
-            if (network && network.hiddenGradients.length > 0) {
-                const avgHiddenGrad = network.hiddenGradients.reduce((a, b) => a + Math.abs(b), 0) / network.hiddenGradients.length;
-                console.log('Hidden Layer (avg):', avgHiddenGrad.toFixed(6));
+            if (network && network.hidden1Gradients.length > 0) {
+                const avgHidden1Grad = network.hidden1Gradients.reduce((a, b) => a + Math.abs(b), 0) / network.hidden1Gradients.length;
+                console.log('Hidden1 Layer (avg):', avgHidden1Grad.toFixed(6));
+            }
+            if (network && network.hidden2Gradients.length > 0) {
+                const avgHidden2Grad = network.hidden2Gradients.reduce((a, b) => a + Math.abs(b), 0) / network.hidden2Gradients.length;
+                console.log('Hidden2 Layer (avg):', avgHidden2Grad.toFixed(6));
             }
             if (network && network.outputGradients.length > 0) {
                 const avgOutputGrad = network.outputGradients.reduce((a, b) => a + Math.abs(b), 0) / network.outputGradients.length;
